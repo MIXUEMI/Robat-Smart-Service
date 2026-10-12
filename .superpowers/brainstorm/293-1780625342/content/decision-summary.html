@@ -1,0 +1,56 @@
+<h2>设计决策总结</h2>
+<p class="subtitle">基于讨论确认的技术选型</p>
+
+<div class="section">
+  <table style="width:100%; border-collapse:collapse;">
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:10px; color:#888;">知识库数据</td>
+      <td style="padding:10px;"><strong>Mock 数据先行</strong>，框架跑通后替换真实文档</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:10px; color:#888;">工具数量</td>
+      <td style="padding:10px;"><strong>8 个工具</strong> — RAG检索、天气、定位、设备状态、数据抓取、产品规格、故障排查、工单提交</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:10px; color:#888;">后端架构</td>
+      <td style="padding:10px;"><strong>FastAPI + Streamlit</strong> — 业务后端和前端 UI 解耦</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:10px; color:#888;">LLM 模型</td>
+      <td style="padding:10px;"><strong>DeepSeek (deepseek-chat)</strong></td>
+    </tr>
+    <tr>
+      <td style="padding:10px; color:#888;">Embedding</td>
+      <td style="padding:10px;"><strong>本地模型</strong> (sentence-transformers / bge-small-zh)</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>现在来看 3 种架构方案</h3>
+  <p class="subtitle">点击选择一个方案查看详情</p>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="langchain" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>LangChain 全栈方案 <span style="color:#4fc3f7;">(推荐)</span></h3>
+      <p>全面基于 LangChain 生态：create_react_agent + Built-in Tools + Chroma + LCEL。代码量少、社区支持强、和现有技术栈无缝对接</p>
+    </div>
+  </div>
+  <div class="option" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>混合方案</h3>
+      <p>ReAct 引擎用 LangChain，工具封装、中间件、前端自研。兼顾效率和控制力，但需要平衡边界</p>
+    </div>
+  </div>
+  <div class="option" data-choice="scratch" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>轻量自研方案</h3>
+      <p>完全自己实现 ReAct Loop、工具注册、向量检索。最大灵活性但工作量大，不利于快速交付</p>
+    </div>
+  </div>
+</div>

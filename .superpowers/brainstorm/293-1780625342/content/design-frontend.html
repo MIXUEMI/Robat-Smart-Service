@@ -1,0 +1,175 @@
+<h2>设计 Section 7：Streamlit 前端</h2>
+<p class="subtitle">聊天 UI + 流式渲染 + 工具调用可视化</p>
+
+<div class="section">
+  <h3>🖥️ 界面布局</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Streamlit 聊天界面 — 三区域布局</div>
+  <div class="mockup-body">
+    <table style="width:100%; font-size:0.85em;">
+      <tr>
+        <td style="width:250px; vertical-align:top; background:#1a1a2e; padding:12px; border-radius:8px;">
+          <strong style="color:#4fc3f7;">📋 侧边栏</strong><br><br>
+          <small style="color:#888;">会话管理</small><br>
+          ├── 新对话按钮<br>
+          ├── 历史会话列表<br>
+          ├── 清除历史<br>
+          <br>
+          <small style="color:#888;">状态面板</small><br>
+          ├── LLM 模型信息<br>
+          ├── 向量库状态<br>
+          └── 日志入口
+        </td>
+        <td style="width:20px;"></td>
+        <td style="vertical-align:top;">
+          <div style="background:#1a1a2e; padding:12px; border-radius:8px; margin-bottom:12px;">
+            <strong style="color:#4fc3f7;">💬 聊天主区域</strong>
+          </div>
+          <div style="background:#0d1117; padding:16px; border-radius:8px; min-height:300px; margin-bottom:8px;">
+            <div style="background:#16213e; padding:8px 12px; border-radius:8px; margin-bottom:8px; text-align:right;">
+              <small style="color:#888;">用户</small><br>
+              我的扫地机报E05错误怎么办？
+            </div>
+            <div style="background:#1b5e20; padding:8px 12px; border-radius:8px; margin-bottom:4px;">
+              <small style="color:#4fc3f7;">小扫 🤖</small><br>
+              正在查询故障代码 E05...
+            </div>
+            <div style="background:#0f3460; padding:6px 10px; border-radius:6px; margin-bottom:4px; font-size:0.82em;">
+              🔧 调用工具: get_troubleshooting_guide
+            </div>
+            <div style="background:#1b5e20; padding:8px 12px; border-radius:8px;">
+              <small style="color:#4fc3f7;">小扫 🤖</small><br>
+              <strong>E05 是边刷缠绕故障</strong>，请按以下步骤处理：<br>
+              1. 翻转机器，检查边刷是否被毛发缠绕<br>
+              2. ...
+            </div>
+          </div>
+          <div style="background:#1a1a2e; padding:10px; border-radius:8px;">
+            <small style="color:#888;">⌨️ 输入区域</small><br>
+            <span style="color:#555;">[输入框] [发送] [语音]</span>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>💻 核心代码设计</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">app.py — Streamlit 主入口</div>
+  <div class="mockup-body" style="font-size:0.82em;">
+<pre style="margin:0;">
+import streamlit as st
+import requests
+import json
+import uuid
+
+st.set_page_config(
+    page_title="小扫 · 智能客服",
+    page_icon="🤖",
+    layout="wide",
+)
+
+# ── 侧边栏 ──
+with st.sidebar:
+    st.title("🤖 小扫 · 智能客服")
+    st.caption("扫地机器人专属助手")
+
+    if st.button("✨ 新对话", use_container_width=True):
+        st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.messages = []
+        st.rerun()
+
+    # 显示系统状态
+    with st.expander("📊 系统状态"):
+        try:
+            health = requests.get("http://localhost:8000/api/v1/health").json()
+            st.success(f"模型: {health['model']}")
+            st.info(f"向量库: {health['vectordb_status']}")
+        except:
+            st.error("服务未连接")
+
+# ── 初始化会话 ──
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# ── 渲染历史消息 ──
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# ── 输入框 ──
+if prompt := st.chat_input("输入你的问题..."):
+    # 显示用户消息
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # 调用流式 API
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        full_response = ""
+
+        with requests.post(
+            "http://localhost:8000/api/v1/chat/stream",
+            json={"session_id": st.session_state.session_id, "query": prompt},
+            stream=True,
+        ) as resp:
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                line = line.decode()
+                if line.startswith("data:"):
+                    data = json.loads(line[5:].strip())
+                elif line.startswith("event:"):
+                    event = line[6:].strip()
+                    continue
+
+                if event == "token":
+                    full_response += data
+                    placeholder.markdown(full_response + "▌")
+                elif event == "tool_start":
+                    with st.status(f"🔧 调用工具: {data}", expanded=False):
+                        pass
+                elif event == "done":
+                    placeholder.markdown(full_response)
+
+        st.session_state.messages.append({
+            "role": "assistant", "content": full_response
+        })
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📱 交互设计要点</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888; width:140px;">流式渲染</td>
+      <td style="padding:6px;"><code>st.empty()</code> placeholder + SSE 逐 token 更新，模拟打字效果</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">工具可见</td>
+      <td style="padding:6px;"><code>st.status()</code> 展示工具调用过程（可折叠），透明化 Agent 行为</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">会话管理</td>
+      <td style="padding:6px;"><code>st.session_state</code> — session_id + messages 列表，保持对话上下文</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">健康检查</td>
+      <td style="padding:6px;">侧边栏轮询 FastAPI /health，实时展示系统状态</td>
+    </tr>
+    <tr>
+      <td style="padding:6px; color:#888;">错误处理</td>
+      <td style="padding:6px;">API 超时/断连时优雅降级，显示错误提示而非崩溃</td>
+    </tr>
+  </table>
+</div>

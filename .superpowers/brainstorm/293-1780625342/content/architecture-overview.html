@@ -1,0 +1,111 @@
+<h2>扫地机器人智能客服系统 — 架构全景</h2>
+<p class="subtitle">当前状态 vs 目标架构：我们需要填补的模块以 🔴 标记</p>
+
+<div class="section">
+  <h3>📊 整体架构分层</h3>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">当前已完成 ✅</div>
+    <div class="mockup-body" style="font-size:0.9em; line-height:1.8;">
+      <strong>📁 项目骨架</strong><br>
+      ├── main.py (CLI 对话循环)<br>
+      ├── configs/settings.py (配置)<br>
+      ├── src/llm/chat_model.py (LLM)<br>
+      ├── requirements.txt<br>
+      └── .env<br>
+      <br>
+      <strong>🔗 LLM 层</strong><br>
+      └── DeepSeek (OpenAI 兼容)<br>
+      <br>
+      <span style="color:#888;">其余模块待开发</span>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">目标架构 🎯</div>
+    <div class="mockup-body" style="font-size:0.85em; line-height:1.8;">
+      <strong>🖥️ 前端层</strong><br>
+      ├── 🔴 Streamlit UI<br>
+      └── 🔴 流式响应消费<br>
+      <br>
+      <strong>⚙️ 业务逻辑层</strong><br>
+      ├── 🔴 ReAct Agent 引擎<br>
+      ├── 🔴 中间件链 (日志/监控/Prompt)<br>
+      └── 🔴 对话历史管理<br>
+      <br>
+      <strong>🔧 工具执行层</strong><br>
+      ├── 🔴 知识库检索 (RAG)<br>
+      ├── 🔴 天气查询<br>
+      ├── 🔴 用户定位<br>
+      ├── 🔴 设备状态<br>
+      └── 🔴 外部数据抓取 (3+)<br>
+      <br>
+      <strong>💾 数据服务层</strong><br>
+      ├── 🔴 ChromaDB 向量库<br>
+      ├── 🔴 文档加载/分块/Embedding<br>
+      └── ✅ LLM 调用封装
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔄 ReAct 核心流程</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">ReAct Agent 决策环路</div>
+  <div class="mockup-body" style="font-size:0.9em; text-align:center; padding:20px;">
+    <code style="font-size:1.1em;">
+      User Query → Thought → Action (Tool Call) → Observation → Thought → ... → Final Answer
+    </code>
+    <br><br>
+    <div style="display:flex; justify-content:space-around; margin-top:20px;">
+      <div style="background:#1a1a2e; padding:12px; border-radius:8px;">
+        <strong>Thought</strong><br>
+        <small>Agent 推理下一步</small>
+      </div>
+      <div style="color:#aaa; align-self:center;">→</div>
+      <div style="background:#16213e; padding:12px; border-radius:8px;">
+        <strong>Action</strong><br>
+        <small>调用工具执行</small>
+      </div>
+      <div style="color:#aaa; align-self:center;">→</div>
+      <div style="background:#0f3460; padding:12px; border-radius:8px;">
+        <strong>Observation</strong><br>
+        <small>工具返回结果</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📋 实现优先级建议</h3>
+  <div class="options">
+    <div class="option" data-choice="phase1" onclick="toggleSelect(this)">
+      <div class="content">
+        <h4>Phase 1: 向量库 + RAG 检索</h4>
+        <p>ChromaDB 集成、文档加载分块、Embedding、语义检索 → 让 Agent 能"记住"产品知识</p>
+      </div>
+    </div>
+    <div class="option" data-choice="phase2" onclick="toggleSelect(this)">
+      <div class="content">
+        <h4>Phase 2: ReAct Agent + 工具链</h4>
+        <p>LangChain Agent 引擎 + 7+工具函数 → 让 Agent 能"行动"</p>
+      </div>
+    </div>
+    <div class="option" data-choice="phase3" onclick="toggleSelect(this)">
+      <div class="content">
+        <h4>Phase 3: 中间件 + 流式后端</h4>
+        <p>日志审计、Prompt 管理、FastAPI + SSE 流式 → 让系统可观测、高性能</p>
+      </div>
+    </div>
+    <div class="option" data-choice="phase4" onclick="toggleSelect(this)">
+      <div class="content">
+        <h4>Phase 4: Streamlit 前端</h4>
+        <p>聊天界面、流式渲染、对话历史 → 让用户可交互</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,146 @@
+<h2>设计 Section 2：数据服务层</h2>
+<p class="subtitle">ChromaDB 向量库 + 文档处理管道 + 本地 Embedding</p>
+
+<div class="section">
+  <h3>🔤 Embedding 模块</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">src/embedding/embeddings.py</div>
+  <div class="mockup-body" style="font-size:0.9em;">
+    <strong>技术选型：</strong><code>sentence-transformers</code> + <code>BAAI/bge-small-zh-v1.5</code>
+    <br><br>
+    <table style="width:100%; border-collapse:collapse; font-size:0.9em;">
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:6px; color:#888;">模型</td>
+        <td style="padding:6px;">BAAI/bge-small-zh-v1.5</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:6px; color:#888;">维度</td>
+        <td style="padding:6px;">512 维</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:6px; color:#888;">大小</td>
+        <td style="padding:6px;">~100MB，首次自动下载</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:6px; color:#888;">接口</td>
+        <td style="padding:6px;">兼容 LangChain <code>Embeddings</code> 基类，可无缝接入 Chroma</td>
+      </tr>
+      <tr>
+        <td style="padding:6px; color:#888;">缓存</td>
+        <td style="padding:6px;">模型单例加载，避免重复初始化</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📄 文档处理管道</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">src/vectordb/loader.py — 文档加载 & 分块流水线</div>
+  <div class="mockup-body" style="font-size:0.85em; padding:15px;">
+    <div style="display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap;">
+      <div style="background:#1a1a2e; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>📁 Raw Docs</strong><br>
+        <small style="color:#888;">data/kb/*.md<br>data/kb/*.txt</small>
+      </div>
+      <span style="font-size:1.2em;">→</span>
+      <div style="background:#16213e; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>🔍 TextLoader</strong><br>
+        <small style="color:#888;">按文件类型加载<br>过滤空文档</small>
+      </div>
+      <span style="font-size:1.2em;">→</span>
+      <div style="background:#0f3460; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>✂️ RecursiveCharacterTextSplitter</strong><br>
+        <small style="color:#888;">chunk_size=512<br>chunk_overlap=64</small>
+      </div>
+      <span style="font-size:1.2em;">→</span>
+      <div style="background:#533483; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>💾 ChromaDB</strong><br>
+        <small style="color:#888;">持久化 + 元数据<br>source, chunk_id</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🗄️ 向量存储 & 检索</h3>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">src/vectordb/store.py — ChromaDB 操作</div>
+    <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+class VectorStore:
+    def __init__(self):
+        self.embedding = get_embedding_model()
+        self.client = chromadb.PersistentClient(
+            path="data/chroma_db"
+        )
+
+    def create_collection(name: str)
+        → Chroma Collection
+
+    def add_documents(docs, collection)
+        → 自动 embedding + 入库
+
+    def similarity_search(query, k=4)
+        → List[Document]
+
+    def delete_collection(name)
+</pre>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">src/vectordb/retriever.py — 检索接口</div>
+    <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+class KnowledgeRetriever:
+    def __init__(self):
+        self.store = VectorStore()
+
+    def retrieve(query, top_k=4)
+        → List[Document]
+        # 语义检索 + 元数据过滤
+
+    def retrieve_with_score(query, k=4)
+        → List[(Document, float)]
+        # 带相似度分数
+
+    def ingest_directory(path)
+        → int  # 返回入库文档数
+        # 批量文档处理入口
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📦 Mock 知识库数据设计</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">data/kb/ 下生成 3 个 Mock 文档</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+    <table style="width:100%; border-collapse:collapse;">
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:6px; color:#4fc3f7; width:180px;">product_manual.md</td>
+        <td style="padding:6px;">产品使用手册 — 型号参数、操作指南、WiFi 配网、APP 使用</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:6px; color:#4fc3f7;">troubleshooting.md</td>
+        <td style="padding:6px;">故障排查 — 常见错误代码(E01-E15)、传感器清理、滚刷卡住、无法回充</td>
+      </tr>
+      <tr>
+        <td style="padding:6px; color:#4fc3f7;">maintenance.md</td>
+        <td style="padding:6px;">日常维护 — 滤网更换周期、刷头清洁、传感器擦拭、固件升级</td>
+      </tr>
+    </table>
+    <br>
+    <small style="color:#888;">每个文档 ~100-200 行中文内容，覆盖售前、售后、维护三大场景</small>
+  </div>
+</div>

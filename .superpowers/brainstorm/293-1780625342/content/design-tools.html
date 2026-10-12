@@ -1,0 +1,199 @@
+<h2>设计 Section 3：工具函数层（8 个工具）</h2>
+<p class="subtitle">每个工具用 @tool 装饰器封装，独立可测试</p>
+
+<div class="section">
+  <h3>🧩 工具全景图</h3>
+</div>
+
+<table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+  <tr style="background:#1a1a2e;">
+    <th style="padding:8px; text-align:left;">#</th>
+    <th style="padding:8px; text-align:left;">工具名</th>
+    <th style="padding:8px; text-align:left;">分类</th>
+    <th style="padding:8px; text-align:left;">输入</th>
+    <th style="padding:8px; text-align:left;">输出</th>
+    <th style="padding:8px; text-align:left;">数据来源</th>
+  </tr>
+  <tr style="border-bottom:1px solid #333;">
+    <td style="padding:6px;">1</td>
+    <td style="padding:6px;"><strong>search_knowledge_base</strong></td>
+    <td style="padding:6px;">RAG</td>
+    <td style="padding:6px;">query: str</td>
+    <td style="padding:6px;">相关文档片段 + 来源</td>
+    <td style="padding:6px;">ChromaDB</td>
+  </tr>
+  <tr style="border-bottom:1px solid #333;">
+    <td style="padding:6px;">2</td>
+    <td style="padding:6px;"><strong>get_weather</strong></td>
+    <td style="padding:6px;">环境感知</td>
+    <td style="padding:6px;">city: str</td>
+    <td style="padding:6px;">温度/湿度/天气/建议</td>
+    <td style="padding:6px;">Mock（预留 API）</td>
+  </tr>
+  <tr style="border-bottom:1px solid #333;">
+    <td style="padding:6px;">3</td>
+    <td style="padding:6px;"><strong>get_user_location</strong></td>
+    <td style="padding:6px;">环境感知</td>
+    <td style="padding:6px;">ip: str (optional)</td>
+    <td style="padding:6px;">城市/省份/国家</td>
+    <td style="padding:6px;">Mock（预留 IP API）</td>
+  </tr>
+  <tr style="border-bottom:1px solid #333;">
+    <td style="padding:6px;">4</td>
+    <td style="padding:6px;"><strong>get_device_status</strong></td>
+    <td style="padding:6px;">设备数据</td>
+    <td style="padding:6px;">device_id: str</td>
+    <td style="padding:6px;">电量/模式/故障码/耗材寿命</td>
+    <td style="padding:6px;">Mock JSON</td>
+  </tr>
+  <tr style="border-bottom:1px solid #333;">
+    <td style="padding:6px;">5</td>
+    <td style="padding:6px;"><strong>fetch_web_content</strong></td>
+    <td style="padding:6px;">外部数据</td>
+    <td style="padding:6px;">url: str</td>
+    <td style="padding:6px;">网页摘要文本</td>
+    <td style="padding:6px;">HTTP + HTML parse</td>
+  </tr>
+  <tr style="border-bottom:1px solid #333;">
+    <td style="padding:6px;">6</td>
+    <td style="padding:6px;"><strong>query_product_spec</strong></td>
+    <td style="padding:6px;">设备数据</td>
+    <td style="padding:6px;">model: str, attr: str(opt)</td>
+    <td style="padding:6px;">规格参数表</td>
+    <td style="padding:6px;">Mock 结构化数据</td>
+  </tr>
+  <tr style="border-bottom:1px solid #333;">
+    <td style="padding:6px;">7</td>
+    <td style="padding:6px;"><strong>get_troubleshooting_guide</strong></td>
+    <td style="padding:6px;">设备数据</td>
+    <td style="padding:6px;">error_code / symptom: str</td>
+    <td style="padding:6px;">排查步骤列表</td>
+    <td style="padding:6px;">Mock 故障库 + RAG</td>
+  </tr>
+  <tr>
+    <td style="padding:6px;">8</td>
+    <td style="padding:6px;"><strong>submit_support_ticket</strong></td>
+    <td style="padding:6px;">服务闭环</td>
+    <td style="padding:6px;">user_name, issue, device_id</td>
+    <td style="padding:6px;">工单ID + 状态</td>
+    <td style="padding:6px;">Mock 工单系统</td>
+  </tr>
+</table>
+
+<div class="section">
+  <h3>🔧 关键工具设计细节</h3>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">search_knowledge_base (最核心)</div>
+    <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+@tool
+def search_knowledge_base(query: str) -> str:
+    """搜索产品知识库，获取相关文档。
+    用于回答产品功能、使用方法、故障排查等问题。"""
+
+    retriever = get_retriever()
+    docs = retriever.retrieve(query, top_k=4)
+
+    if not docs:
+        return "未找到相关知识。"
+
+    result = []
+    for i, doc in enumerate(docs):
+        result.append(
+            f"[来源{i+1}: {doc.metadata['source']}]\n"
+            f"{doc.page_content}"
+        )
+
+    return "\n\n---\n\n".join(result)
+</pre>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">get_device_status (Mock 示例)</div>
+    <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+@tool
+def get_device_status(device_id: str) -> str:
+    """获取扫地机器人实时状态。"""
+
+    # Mock 数据（后续对接真实 IoT API）
+    mock_devices = {
+        "RB-001": {
+            "battery": 85,
+            "mode": "安静清扫",
+            "filter_life": "72%",
+            "brush_life": "45%",
+            "error_code": None,
+            "last_clean": "2026-06-05 08:30",
+            "total_area": 128.5,
+        }
+    }
+
+    device = mock_devices.get(device_id)
+    if not device:
+        return f"未找到设备 {device_id}"
+
+    return json.dumps(device, ensure_ascii=False, indent=2)
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📐 工具注册机制</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">src/tools/__init__.py — 统一工具注册</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+from src.tools.knowledge_search import search_knowledge_base
+from src.tools.weather import get_weather
+from src.tools.location import get_user_location
+from src.tools.device_status import get_device_status
+from src.tools.web_scraper import fetch_web_content
+from src.tools.product_spec import query_product_spec
+from src.tools.troubleshooting import get_troubleshooting_guide
+from src.tools.ticket import submit_support_ticket
+
+# 所有工具注册为一个列表，Agent 初始化时注入
+ALL_TOOLS = [
+    search_knowledge_base,    # RAG 核心
+    get_weather,              # 环境感知
+    get_user_location,        # 环境感知
+    get_device_status,        # 设备数据
+    fetch_web_content,        # 外部数据
+    query_product_spec,       # 设备数据
+    get_troubleshooting_guide,# 设备数据
+    submit_support_ticket,    # 服务闭环
+]
+
+def get_tools_for_scenario(scenario: str = "default") -> list:
+    """根据场景返回不同工具集（支持动态 Prompt 切换时裁剪）"""
+    # scenario: "presale" | "aftersale" | "maintenance" | "default"
+    ...
+    return ALL_TOOLS
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🎭 Mock 策略</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#4fc3f7; width:140px;">真实数据</td>
+      <td style="padding:6px;">search_knowledge_base (ChromaDB + Mock 文档)、fetch_web_content (真实 HTTP)</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#4fc3f7;">结构化 Mock</td>
+      <td style="padding:6px;">get_device_status、query_product_spec、get_troubleshooting_guide</td>
+    </tr>
+    <tr>
+      <td style="padding:6px; color:#4fc3f7;">API 预留</td>
+      <td style="padding:6px;">get_weather、get_user_location — 先用 mock 数据，预留真实 API 对接接口</td>
+    </tr>
+  </table>
+</div>

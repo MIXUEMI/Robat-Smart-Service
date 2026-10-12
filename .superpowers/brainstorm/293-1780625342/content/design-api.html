@@ -1,0 +1,200 @@
+<h2>设计 Section 6：FastAPI 服务 & SSE 流式</h2>
+<p class="subtitle">REST 接口 + SSE 流式响应，解耦 Streamlit 前端</p>
+
+<div class="section">
+  <h3>🌐 API 端点设计</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">src/api/routes.py — 2 个核心端点</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+from fastapi import FastAPI, APIRouter
+from fastapi.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
+
+router = APIRouter(prefix="/api/v1")
+
+# ── 端点 1: 普通对话（非流式）──
+@router.post("/chat")
+async def chat(request: ChatRequest):
+    """同步对话 — 返回完整回答"""
+    agent = get_agent()
+    result = agent.invoke([
+        ("system", get_scenario_prompt(request.query)),
+        ("human", request.query),
+    ])
+    return ChatResponse(
+        answer=result["messages"][-1].content,
+        session_id=request.session_id,
+    )
+
+# ── 端点 2: 流式对话 ──
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """SSE 流式对话 — 逐 token 返回"""
+    agent = get_agent()
+
+    async def event_generator():
+        async for event in agent.astream([
+            ("system", get_scenario_prompt(request.query)),
+            ("human", request.query),
+        ]):
+            # 根据事件类型发送不同的 SSE 消息
+            if event["type"] == "on_chat_model_stream":
+                # LLM 输出的 token
+                yield {
+                    "event": "token",
+                    "data": event["data"]["chunk"].content,
+                }
+            elif event["type"] == "on_tool_start":
+                # 工具开始调用
+                yield {
+                    "event": "tool_start",
+                    "data": event["name"],
+                }
+            elif event["type"] == "on_tool_end":
+                # 工具调用完成
+                yield {
+                    "event": "tool_end",
+                    "data": event["name"],
+                }
+
+        # 结束信号
+        yield {"event": "done", "data": ""}
+
+    return EventSourceResponse(event_generator())
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📦 数据模型</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">src/api/schemas.py — Pydantic 模型</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+from pydantic import BaseModel, Field
+
+class ChatRequest(BaseModel):
+    session_id: str = Field(..., description="会话 ID")
+    query: str = Field(..., min_length=1, max_length=2000)
+    user_id: str | None = None
+    device_id: str | None = None  # 关联设备
+
+class ChatResponse(BaseModel):
+    answer: str
+    session_id: str
+    tool_calls: list[str] = []    # 本次用到的工具
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    model: str
+    vectordb_status: str  # "ready" | "empty" | "error"
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🚀 Server 入口</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">server.py — FastAPI 应用工厂</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from src.api.routes import router
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="RAG Agent Customer Service",
+        version="1.0.0",
+        docs_url="/docs",
+    )
+
+    # CORS — 允许 Streamlit 跨域
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # 注册路由
+    app.include_router(router)
+
+    # 生命周期事件
+    @app.on_event("startup")
+    async def startup():
+        """初始化 Embedding 模型 + Agent + 向量库"""
+        init_embedding_model()
+        init_vector_store()
+        init_agent()
+        logger.info("🚀 Service started")
+
+    return app
+
+app = create_app()
+
+# uvicorn server:app --reload --port 8000
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📊 SSE 流式协议</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">SSE 事件流示例 — 一次典型对话</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+event: token          ← LLM 输出 "您的"
+event: token          ← LLM 输出 "扫地机"
+event: tool_start     ← Agent 调用 get_troubleshooting_guide
+data: get_troubleshooting_guide
+event: tool_end       ← 工具返回结果
+data: get_troubleshooting_guide
+event: token          ← LLM 继续输出 "报错 E05"
+event: token          ← LLM 输出 "是边刷缠绕..."
+event: token          ← LLM 输出 ...
+event: done           ← 对话完成
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🎯 非流式 vs 流式</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888; width:100px;"></td>
+      <td style="padding:6px; color:#4fc3f7;"><strong>POST /chat</strong></td>
+      <td style="padding:6px; color:#4fc3f7;"><strong>POST /chat/stream</strong></td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">响应方式</td>
+      <td style="padding:6px;">一次返回完整答案</td>
+      <td style="padding:6px;">SSE 逐 token 推送</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">首字延迟</td>
+      <td style="padding:6px;">等待全部生成完</td>
+      <td style="padding:6px;">目标 &lt; 800ms</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">适用场景</td>
+      <td style="padding:6px;">API 集成、批量测试</td>
+      <td style="padding:6px;">Streamlit 聊天 UI</td>
+    </tr>
+    <tr>
+      <td style="padding:6px; color:#888;">工具可见性</td>
+      <td style="padding:6px;">仅最终答案</td>
+      <td style="padding:6px;">可展示工具调用过程</td>
+    </tr>
+  </table>
+</div>

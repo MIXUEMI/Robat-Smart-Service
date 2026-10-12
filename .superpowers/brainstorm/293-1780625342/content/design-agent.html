@@ -1,0 +1,173 @@
+<h2>设计 Section 4：ReAct Agent 引擎</h2>
+<p class="subtitle">核心推理引擎 — Thought → Action → Observation 循环</p>
+
+<div class="section">
+  <h3>⚙️ Agent 核心机制</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">src/agent/agent.py — 基于 LangChain create_react_agent</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+from langgraph.prebuilt import create_react_agent
+from langchain_core.prompts import ChatPromptTemplate
+
+class CustomerServiceAgent:
+    """扫地机器人智能客服 Agent"""
+
+    def __init__(self, tools: list, llm, system_prompt: str):
+        self.tools = tools
+        self.llm = llm.bind_tools(tools)  # 绑定工具到模型
+        self.system_prompt = system_prompt
+
+        # 使用 LangGraph 的 create_react_agent
+        self.agent = create_react_agent(
+            model=self.llm,
+            tools=self.tools,
+            prompt=self.system_prompt,
+        )
+
+    async def astream(self, messages: list):
+        """异步流式执行 — 逐 token 返回"""
+        async for event in self.agent.astream_events(
+            {"messages": messages},
+            version="v2",
+        ):
+            yield self._parse_event(event)
+
+    def invoke(self, messages: list) -> dict:
+        """同步执行 — 返回完整结果"""
+        return self.agent.invoke({"messages": messages})
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🧠 System Prompt 设计</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">src/agent/prompt.py — 多场景 Prompt 模板</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+SYSTEM_PROMPT_BASE = """你是「小扫」，专业扫地机器人智能客服助手。
+
+## 你的能力
+你可以通过调用工具来获取信息，帮助用户解决问题：
+- search_knowledge_base: 搜索产品知识库
+- get_device_status: 查询设备实时状态
+- get_weather: 查询天气（影响清扫建议）
+- get_user_location: 获取用户位置
+- query_product_spec: 查询产品规格参数
+- get_troubleshooting_guide: 获取故障排查步骤
+- fetch_web_content: 获取网页最新信息
+- submit_support_ticket: 提交售后工单
+
+## 工作原则
+1. 先理解用户意图，判断是售前咨询、故障排查还是日常维护
+2. 需要事实信息时，必须调用工具获取，不要编造
+3. 工具返回的信息要整合成通俗易懂的回答
+4. 如果工具信息不足以回答，诚实告知并建议提交工单
+5. 回答简洁有用，多用分点和加粗提高可读性
+"""
+
+# 场景化 Prompt 变体（供动态切换）
+PRESALE_PROMPT = SYSTEM_PROMPT_BASE + "\n## 当前场景：售前咨询\n重点推荐产品特性、对比参数、回答购买相关问题。"
+AFTERSALE_PROMPT = SYSTEM_PROMPT_BASE + "\n## 当前场景：售后支持\n优先排查故障、查看设备状态、必要时引导提交工单。"
+MAINTENANCE_PROMPT = SYSTEM_PROMPT_BASE + "\n## 当前场景：日常维护\n关注耗材寿命、清洁保养、使用技巧。"
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>💬 对话记忆管理</h3>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">src/agent/memory.py</div>
+    <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+from langchain_core.chat_history import (
+    InMemoryChatMessageHistory,
+)
+from langchain_core.runnables.history import (
+    RunnableWithMessageHistory,
+)
+
+class ConversationManager:
+    """会话管理 — 内存存储，支持多会话"""
+
+    def __init__(self):
+        self._store: dict[str, InMemoryChatMessageHistory] = {}
+
+    def get_history(self, session_id: str):
+        if session_id not in self._store:
+            self._store[session_id] = (
+                InMemoryChatMessageHistory()
+            )
+        return self._store[session_id]
+
+    def clear(self, session_id: str):
+        if session_id in self._store:
+            del self._store[session_id]
+
+    def get_recent_messages(
+        self, session_id: str, n: int = 10
+    ) -> list:
+        history = self.get_history(session_id)
+        return history.messages[-n:]
+</pre>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">ReAct 执行流程示意</div>
+    <div class="mockup-body" style="font-size:0.85em; padding:15px;">
+      <div style="text-align:center;">
+        <div style="background:#1a1a2e; padding:8px; border-radius:6px; margin:4px;">
+          <strong>User:</strong> "我的扫地机报E05错误怎么办？"
+        </div>
+        <div style="color:#4fc3f7; margin:8px;">↓ Agent 推理</div>
+        <div style="background:#16213e; padding:8px; border-radius:6px; margin:4px;">
+          <strong>Thought:</strong> 用户遇到故障代码 E05，需要查排查指南
+        </div>
+        <div style="background:#0f3460; padding:8px; border-radius:6px; margin:4px;">
+          <strong>Action:</strong> get_troubleshooting_guide("E05")
+        </div>
+        <div style="background:#533483; padding:8px; border-radius:6px; margin:4px;">
+          <strong>Observation:</strong> "E05: 边刷缠绕 → 1.翻转机器 2.清理毛发..."
+        </div>
+        <div style="color:#4fc3f7; margin:8px;">↓ Agent 判断信息足够</div>
+        <div style="background:#1b5e20; padding:8px; border-radius:6px; margin:4px;">
+          <strong>Final Answer:</strong> "E05 是边刷缠绕故障，请按以下步骤处理..."
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔑 关键设计决策</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888; width:160px;">Agent 框架</td>
+      <td style="padding:6px;"><code>langgraph.prebuilt.create_react_agent</code> — 比旧版 langchain.agents 更稳定，原生支持 streaming</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">工具绑定</td>
+      <td style="padding:6px;"><code>llm.bind_tools(tools)</code> — DeepSeek 支持原生 function calling</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">流式输出</td>
+      <td style="padding:6px;"><code>astream_events</code> — 逐 token 流式返回，支持 on_tool_start/on_tool_end 事件</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">消息历史</td>
+      <td style="padding:6px;">InMemoryChatMessageHistory — 会话级内存存储，后续可切换到 Redis/DB</td>
+    </tr>
+    <tr>
+      <td style="padding:6px; color:#888;">最大迭代</td>
+      <td style="padding:6px;">Agent 最多执行 10 轮 Thought-Action，防止无限循环</td>
+    </tr>
+  </table>
+</div>

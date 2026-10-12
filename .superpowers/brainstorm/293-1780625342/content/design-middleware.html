@@ -1,0 +1,191 @@
+<h2>设计 Section 5：中间件链</h2>
+<p class="subtitle">LangChain Callback 机制 — 日志审计 + 性能监控 + 动态 Prompt 切换</p>
+
+<div class="section">
+  <h3>🔗 中间件执行流程</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">请求 → 中间件链 → Agent → 中间件链 → 响应</div>
+  <div class="mockup-body" style="font-size:0.85em; padding:20px;">
+    <div style="display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;">
+      <div style="background:#1a1a2e; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>📥 请求进入</strong>
+      </div>
+      <span>→</span>
+      <div style="background:#e65100; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>🔍 日志审计</strong><br>
+        <small>记录 user_id, query,<br>timestamp, session_id</small>
+      </div>
+      <span>→</span>
+      <div style="background:#6a1b9a; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>🎯 Prompt 切换</strong><br>
+        <small>根据意图分类切换<br>售前/售后/维护 Prompt</small>
+      </div>
+      <span>→</span>
+      <div style="background:#0f3460; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>🤖 Agent 执行</strong><br>
+        <small>ReAct 推理循环</small>
+      </div>
+      <span>→</span>
+      <div style="background:#00695c; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>📊 性能监控</strong><br>
+        <small>耗时、token 用量、<br>工具调用次数</small>
+      </div>
+      <span>→</span>
+      <div style="background:#1a1a2e; padding:10px 14px; border-radius:8px; text-align:center;">
+        <strong>📤 响应返回</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>💻 实现 — 基于 LangChain BaseCallbackHandler</h3>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">middleware/logging_mw.py</div>
+    <div class="mockup-body" style="font-size:0.82em;">
+<pre style="margin:0;">
+class AuditLoggingHandler(BaseCallbackHandler):
+    """请求日志审计 — 记录每次对话"""
+
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        self._log({
+            "event": "llm_start",
+            "timestamp": time.time(),
+            "prompt_preview": prompts[0][:200],
+            "session_id": kwargs.get("session_id"),
+        })
+
+    def on_tool_start(self, serialized, input_str, **kwargs):
+        self._log({
+            "event": "tool_start",
+            "tool": serialized.get("name"),
+            "input": input_str,
+        })
+
+    def on_tool_end(self, output, **kwargs):
+        self._log({
+            "event": "tool_end",
+            "output_preview": str(output)[:500],
+        })
+
+    def _log(self, entry: dict):
+        # 写入 logs/audit.jsonl
+        ...
+</pre>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">middleware/monitor_mw.py</div>
+    <div class="mockup-body" style="font-size:0.82em;">
+<pre style="margin:0;">
+class PerformanceMonitor(BaseCallbackHandler):
+    """全链路性能监控"""
+
+    def on_chain_start(self, ...):
+        self.start_time = time.time()
+        self.tool_calls = 0
+        self.total_tokens = 0
+
+    def on_tool_start(self, ...):
+        self.tool_calls += 1
+
+    def on_llm_end(self, response, **kwargs):
+        usage = response.llm_output.get("token_usage", {})
+        self.total_tokens += usage.get("total_tokens", 0)
+
+    def on_chain_end(self, outputs, **kwargs):
+        elapsed = time.time() - self.start_time
+        self._report({
+            "latency_ms": elapsed * 1000,
+            "tool_calls": self.tool_calls,
+            "total_tokens": self.total_tokens,
+        })
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">middleware/prompt_switch.py — 动态 Prompt 切换</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+from src.agent.prompt import PRESALE_PROMPT, AFTERSALE_PROMPT, MAINTENANCE_PROMPT, SYSTEM_PROMPT_BASE
+
+# 关键词 → 场景映射
+SCENARIO_KEYWORDS = {
+    "presale": ["购买", "多少钱", "哪个型号", "对比", "推荐", "有什么区别", "参数"],
+    "aftersale": ["坏了", "报错", "故障", "不工作", "报修", "维修", "E0", "E1", "错误代码"],
+    "maintenance": ["保养", "清理", "更换滤网", "耗材", "怎么清洗", "多久换"],
+}
+
+def detect_scenario(user_query: str) -> str:
+    """根据用户问题自动检测场景"""
+    for scenario, keywords in SCENARIO_KEYWORDS.items():
+        if any(kw in user_query for kw in keywords):
+            return scenario
+    return "default"
+
+def get_prompt_for_scenario(scenario: str) -> str:
+    prompts = {
+        "presale": PRESALE_PROMPT,
+        "aftersale": AFTERSALE_PROMPT,
+        "maintenance": MAINTENANCE_PROMPT,
+        "default": SYSTEM_PROMPT_BASE,
+    }
+    return prompts.get(scenario, SYSTEM_PROMPT_BASE)
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📦 中间件注册</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">src/middleware/__init__.py — 统一中间件链</div>
+  <div class="mockup-body" style="font-size:0.85em;">
+<pre style="margin:0;">
+from src.middleware.logging_mw import AuditLoggingHandler
+from src.middleware.monitor_mw import PerformanceMonitor
+
+# 中间件链 — 按顺序执行
+MIDDLEWARE_CHAIN = [
+    AuditLoggingHandler(),     # 1. 先审计
+    PerformanceMonitor(),      # 2. 再监控
+]
+
+# Agent 配置时注入 callbacks
+def build_agent_config(callbacks=None):
+    if callbacks is None:
+        callbacks = MIDDLEWARE_CHAIN
+    return {"callbacks": callbacks}
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📋 设计要点</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888; width:140px;">实现机制</td>
+      <td style="padding:6px;">LangChain <code>BaseCallbackHandler</code> — 原生钩子，无需侵入 Agent 代码</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">审计日志</td>
+      <td style="padding:6px;">每次 LLM 调用 + 工具调用写一条 JSONL，存入 <code>logs/audit.jsonl</code></td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:6px; color:#888;">监控指标</td>
+      <td style="padding:6px;">首字延迟、总耗时、token 用量、工具调用次数 — 结构化为日志输出</td>
+    </tr>
+    <tr>
+      <td style="padding:6px; color:#888;">Prompt 切换</td>
+      <td style="padding:6px;">关键词匹配检测场景（简单高效），后续可升级为 LLM 意图分类</td>
+    </tr>
+  </table>
+</div>
